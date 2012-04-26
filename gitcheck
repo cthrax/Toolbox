@@ -1,0 +1,168 @@
+#!/usr/bin/zsh
+workspace="/home/myles/workspace"
+git="/usr/bin/git"
+ant="/usr/bin/ant"
+dir=( "$workspace/webapp" )
+
+svnup() {
+    cd $dir
+    echo "Running in $dir"
+    $git svn fetch
+    resp=`git svn rebase`
+    respcode=$?
+    echo $resp
+
+    if [[ respcode -ne 0 ]]; then
+        read res'?Continue to merge?(y/n): '
+        if [[ $res != "y" ]]; then
+            echo "Aborting... $dir"
+            exit
+        fi
+        read res'?Run merge?(y/n): '
+
+        if [[ $res == "y" ]]; then
+            $git mergetool
+
+            read res'?Everything ok?(y/n): '
+            if [[ $res != "y" ]]; then
+                echo "Aborting... $dir"
+                exit
+            fi
+        fi
+    fi
+}
+
+svndiff() {
+    # Get the tracking branch (if we're on a branch)
+    TRACKING_BRANCH=`git svn info | grep URL | sed -e 's/.*\/branches\///'`
+
+    # If the tracking branch has 'URL' at the beginning, then the sed wasn't successful and
+    # we'll fall back to the svn-remote config option
+    if [[ "$TRACKING_BRANCH" =~ URL.* ]]
+    then
+        TRACKING_BRANCH=`git config --get svn-remote.svn.fetch | sed -e 's/.*:refs\/remotes\///'`
+    fi
+
+    git difftool --no-prefix $(git rev-list --date-order --max-count=1 $TRACKING_BRANCH) $*
+}
+
+svncreatebranch() {
+    if [[ $# -ne 3 ]]
+    then
+        echo "Requires branch name and commit message."
+        exit
+    fi
+
+    cd $dir
+    branch=$2
+    message="$3"
+    remote_exists="false"
+    local_exists="false"
+
+    for remote in $(git branch -r)
+    do
+        if [[ "$branch" == "$remote" ]]
+        then
+            remote_exists="true"
+        fi
+    done
+
+    for local in $(git branch)
+    do
+        if [[ "$branch" == "$local" ]]
+        then
+            local_exists="true"
+        fi
+    done
+
+    if [[ $remote_exists == "true" || $local_exists == "true" ]]
+    then
+        echo "Branch with that name already exists (either local or remote), exiting..."
+        exit
+    else
+        git svn branch -n -m "$message" $branch
+
+        read res'?Continue creating branch for real?(y/n): '
+
+        if [[ $res == "y" ]]
+        then
+            $git svn branch -m "$message" $branch
+            echo "Switching to a new local branch that tracks the new remote branch"
+            $git checkout -b local/$branch $branch
+        fi
+    fi
+}
+
+svnswitchbranch() {
+    if [[ $# -ne 2 ]]
+    then
+        echo "Requires branch name"
+        exit
+    fi
+
+    cd $dir
+    branch=$2
+    found="false"
+
+    for remote in $(git branch -r)
+    do
+        if [[ "$branch" == "$remote" ]]
+        then
+            found="true"
+        fi
+    done
+
+    if [[ $found == "true" ]]
+    then
+        $git checkout -b $branch
+    else
+        read res'?Not an svn branch, continue?(y/n): '
+
+        if [[ $res == "y" ]]
+        then
+            $git checkout -b $branch
+        fi
+    fi
+}
+
+trim() { return $1; }
+
+checkstatus() {
+    cd $dir
+    res=`$git status | sed -e 's/.*nothing to commit.*/true/' -e 's/# On branch master//' | tr -d '\n' `
+    expected="true"
+
+    if [[ $res != $expected ]]; then;
+        echo "Uncommitted changes $dir"
+    fi
+}
+
+if [[ $# -ge 1 ]]; then
+    case "$1" in
+        "status"|"st")
+            checkstatus
+            ;;
+        "up"|"svnup")
+            svnup
+            ;;
+        "diff")
+            svndiff
+            ;;
+        "create-branch"|"cb")
+            svncreatebranch $*
+            ;;
+        "switch-branch"|"sb")
+            svnswitchbranch $*
+            ;;
+        "help")
+            echo "svnup, up, diff, status, st, create-branch, cb(branch-name, message), switch-branch, sb(branch-name)"
+            ;;
+    esac
+    exit
+fi
+
+checkstatus
+read res'?Continue to update? (y/n): '
+if [[ $res == "y" ]]; then
+    svnup
+fi

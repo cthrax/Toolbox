@@ -1,0 +1,4 @@
+*.swp
+build_scripts/
+gwt-2.0.4/
+x86_scripts/
