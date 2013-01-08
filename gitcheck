@@ -13,22 +13,32 @@ svnup() {
     echo $resp
 
     if [[ respcode -ne 0 ]]; then
-        read res'?Continue to merge?(y/n): '
-        if [[ $res != "y" ]]; then
-            echo "Aborting... $dir"
-            exit
-        fi
-        read res'?Run merge?(y/n): '
+        resp=1
+        while [[ $resp -ne 0 ]]; do
+            resp=gitmerge
+        done
+    fi
+}
 
-        if [[ $res == "y" ]]; then
-            $git mergetool
+gitmerge() {
+    read res'?Run merge?(y/n): '
+    if [[ $res != "y" ]]; then
+        echo "Aborting..."
+        return 0
+    fi
+    resp=`git mergetool`
+    respcode=$?
+    echo $resp
 
-            read res'?Everything ok?(y/n): '
-            if [[ $res != "y" ]]; then
-                echo "Aborting... $dir"
-                exit
-            fi
-        fi
+    read res'?Everything ok?(y/n): '
+    if [[ $res != "y" ]]; then
+        echo "Aborting..."
+        exit
+    else
+        echo "Trying rebase"
+        resp=`git rebase --continue`
+        echo $resp
+        return $?
     fi
 }
 
